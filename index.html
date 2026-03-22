@@ -9,7 +9,7 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- docx and FileSaver for Word Export -->
-    <script src="https://cdn.jsdelivr.net/npm/docx@8.2.2/build/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -207,7 +207,11 @@
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
 
-        console.log("Libraries check:", { docx: !!window.docx, saveAs: !!window.saveAs });
+        console.log("Libraries check:", { 
+            docx: !!window.docx, 
+            docxGlobal: typeof docx !== 'undefined',
+            saveAs: !!window.saveAs 
+        });
 
         let allCases = [];
         let currentUser = null;
@@ -327,14 +331,15 @@
             provisionFilter.innerHTML = provisions.map(p => `<option value="${p}">${p}</option>`).join('');
         }
 
-        // Export Docs (Bulk)
         exportDocsBtn.addEventListener('click', async () => {
             if (allCases.length === 0) return showNotification('No cases to export.');
             
             try {
-                const docxLib = window.docx;
+                const docxLib = window.docx || (typeof docx !== 'undefined' ? docx : null);
+                
                 if (!docxLib) {
-                    throw new Error('Word export library (docx) not loaded. Please check your internet connection and refresh.');
+                    console.error("docx library not found in window or global scope");
+                    throw new Error('Word export library (docx) not loaded. This usually happens due to a slow internet connection or a browser blocking the external script. Please try refreshing the page or using a different browser.');
                 }
                 
                 showNotification('Generating document...', 'info');
@@ -628,6 +633,7 @@
         window.openModal = (id) => {
             const item = allCases.find(c => c.id === id);
             if (!item) return;
+            console.log("Opening modal. Current user:", currentUser?.email);
             selectedCase = item;
             isEditing = false;
             editedCase = { ...item };
@@ -653,13 +659,21 @@
             // Update Action Buttons
             modalActionButtons.innerHTML = '';
             if (!isEditing) {
+                // Show Edit button if logged in
                 if (currentUser) {
                     const editBtn = document.createElement('button');
                     editBtn.className = "flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all text-xs font-semibold shadow-sm";
                     editBtn.innerHTML = `<i data-lucide="edit-2" class="w-3.5 h-3.5"></i> Edit`;
                     editBtn.onclick = () => { isEditing = true; renderModal(); };
                     modalActionButtons.appendChild(editBtn);
+                } else {
+                    // Optional: Show a hint that login is required to edit
+                    const loginHint = document.createElement('span');
+                    loginHint.className = "text-[10px] text-gray-400 italic mr-2";
+                    loginHint.textContent = "Login to edit";
+                    modalActionButtons.appendChild(loginHint);
                 }
+                
                 const downloadBtn = document.createElement('button');
                 downloadBtn.className = "flex items-center gap-2 px-4 py-2 bg-black text-white rounded-xl hover:bg-gray-800 transition-all text-xs font-semibold shadow-sm";
                 downloadBtn.innerHTML = `<i data-lucide="download" class="w-3.5 h-3.5"></i> Download`;
@@ -853,9 +867,12 @@
             const item = selectedCase;
             
             try {
-                const docxLib = window.docx;
+                // Try multiple ways to find the docx library
+                const docxLib = window.docx || (typeof docx !== 'undefined' ? docx : null);
+                
                 if (!docxLib) {
-                    throw new Error('Word export library (docx) not loaded. Please check your internet connection and refresh.');
+                    console.error("docx library not found in window or global scope");
+                    throw new Error('Word export library (docx) not loaded. This usually happens due to a slow internet connection or a browser blocking the external script. Please try refreshing the page or using a different browser.');
                 }
 
                 showNotification('Generating document...', 'info');
