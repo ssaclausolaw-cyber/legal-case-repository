@@ -338,17 +338,97 @@
             provisionFilter.innerHTML = provisions.map(p => `<option value="${p}">${p}</option>`).join('');
         }
 
+        // Library-less Word Export Fallback (Workaround for docx library loading issues)
+        function exportToWordLibraryLess(cases, filename) {
+            console.log("Using library-less export fallback");
+            showNotification('Using legacy export mode...', 'info');
+            
+            let html = `
+                <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+                <head>
+                    <meta charset='utf-8'>
+                    <style>
+                        table { border-collapse: collapse; width: 100%; }
+                        th, td { border: 1px solid #ccc; padding: 10px; text-align: left; font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; vertical-align: top; }
+                        th { background-color: #f8f9fa; font-weight: bold; color: #333; }
+                        h2 { font-family: "Segoe UI", Arial, sans-serif; color: #1a1a1a; }
+                        .meta { font-size: 8pt; color: #666; margin-bottom: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <h2>Legal Case Repository Export</h2>
+                    <p class="meta">Exported on: ${new Date().toLocaleString()}</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 25%">Case Name / Citation</th>
+                                <th style="width: 15%">Petitioner</th>
+                                <th style="width: 15%">Respondent</th>
+                                <th style="width: 20%">Provisions</th>
+                                <th style="width: 25%">Topic & Article</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            cases.forEach(item => {
+                const combinedTopic = [item.provisionTopic, item.articleCited, item.provision]
+                    .filter(val => val && String(val).trim() !== '')
+                    .map(val => String(val).trim())
+                    .join(' | ') || '—';
+
+                html += `
+                    <tr>
+                        <td>${item.caseNameCitation || item.title || '—'}</td>
+                        <td>${item.petitioner || '—'}</td>
+                        <td>${item.respondent || '—'}</td>
+                        <td>${item.provisions || '—'}</td>
+                        <td>${combinedTopic}</td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                        </tbody>
+                    </table>
+                </body>
+                </html>
+            `;
+            
+            try {
+                const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+                if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+                    window.navigator.msSaveOrOpenBlob(blob, filename + '.doc');
+                } else {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = filename + '.doc';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }
+                showNotification('Export successful (Legacy Mode)', 'success');
+            } catch (err) {
+                console.error("Legacy export failed:", err);
+                showNotification('Export failed. Please try a different browser.', 'error');
+            }
+        }
+
         exportDocsBtn.addEventListener('click', async () => {
             if (allCases.length === 0) return showNotification('No cases to export.');
             
+            const filename = `Legal_Cases_Export_${new Date().toISOString().split('T')[0]}`;
+            const docxLib = window.docx || (typeof docx !== 'undefined' ? docx : null);
+
+            if (!docxLib) {
+                console.warn("docx library not loaded, falling back to legacy export");
+                exportToWordLibraryLess(allCases, filename);
+                return;
+            }
+            
             try {
-                const docxLib = window.docx || (typeof docx !== 'undefined' ? docx : null);
-                
-                if (!docxLib) {
-                    console.error("docx library not found in window or global scope");
-                    throw new Error('Word export library (docx) not loaded. This usually happens due to a slow internet connection or a browser blocking the external script. Please try refreshing the page or using a different browser.');
-                }
-                
                 showNotification('Generating document...', 'info');
                 const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, SectionType } = docxLib;
 
@@ -874,16 +954,17 @@
         async function downloadCurrentCase() {
             if (!selectedCase) return;
             const item = selectedCase;
+            const filename = (item.caseNameCitation || item.title || 'Case_Details').replace(/[^a-z0-9]/gi, '_').substring(0, 50);
             
-            try {
-                // Try multiple ways to find the docx library
-                const docxLib = window.docx || (typeof docx !== 'undefined' ? docx : null);
-                
-                if (!docxLib) {
-                    console.error("docx library not found in window or global scope");
-                    throw new Error('Word export library (docx) not loaded. This usually happens due to a slow internet connection or a browser blocking the external script. Please try refreshing the page or using a different browser.');
-                }
+            const docxLib = window.docx || (typeof docx !== 'undefined' ? docx : null);
+            
+            if (!docxLib) {
+                console.warn("docx library not loaded, falling back to legacy export for single case");
+                exportToWordLibraryLess([item], filename);
+                return;
+            }
 
+            try {
                 showNotification('Generating document...', 'info');
                 const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, SectionType } = docxLib;
 
