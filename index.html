@@ -8,6 +8,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- docx and FileSaver for Word Export -->
+    <script src="https://unpkg.com/docx@8.2.2/build/index.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; }
@@ -33,8 +36,8 @@
                 </div>
                 <div class="flex items-center gap-2">
                     <span id="authStatus" class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mr-2"></span>
-                    <button id="exportCsvBtn" class="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200 transition-all">
-                        <i data-lucide="download" class="w-3.5 h-3.5"></i> CSV
+                    <button id="exportDocsBtn" class="flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-600 border border-blue-100 rounded-xl text-xs font-bold hover:bg-blue-100 transition-all">
+                        <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Export Docs
                     </button>
                     <button id="loginBtn" class="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all">
                         <i data-lucide="log-in" class="w-3.5 h-3.5"></i> Admin Login
@@ -118,6 +121,34 @@
                     </tbody>
                 </table>
             </div>
+            <!-- Pagination -->
+            <div class="px-6 py-4 bg-gray-50/50 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div class="flex items-center gap-4">
+                    <p class="text-xs text-gray-500">
+                        Showing <span id="paginationInfo" class="font-medium text-gray-900">0 to 0 of 0</span> results
+                    </p>
+                    <div class="flex items-center gap-2">
+                        <label for="rowsPerPage" class="text-xs text-gray-500">Rows:</label>
+                        <select id="rowsPerPage" class="text-xs border border-gray-200 rounded-lg bg-white px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black/5">
+                            <option value="5">5</option>
+                            <option value="10" selected>10</option>
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="prevPage" class="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                    </button>
+                    <div id="pageNumbers" class="flex items-center gap-1">
+                        <!-- Page numbers injected here -->
+                    </div>
+                    <button id="nextPage" class="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
         </div>
 
         <div id="noResults" class="hidden text-center py-20">
@@ -192,7 +223,7 @@
         const adminActions = document.getElementById('adminActions');
         const importBtn = document.getElementById('importBtn');
         const clearBtn = document.getElementById('clearBtn');
-        const exportCsvBtn = document.getElementById('exportCsvBtn');
+        const exportDocsBtn = document.getElementById('exportDocsBtn');
         const fileInput = document.getElementById('fileInput');
 
         const authStatus = document.getElementById('authStatus');
@@ -211,6 +242,9 @@
         const modalDownload = document.getElementById('modalDownload');
 
         let selectedCase = null;
+        let currentPage = 1;
+        let itemsPerPage = 10;
+        let filteredCount = 0;
 
         function showNotification(message, type = 'info') {
             notificationText.textContent = message;
@@ -289,35 +323,110 @@
             provisionFilter.innerHTML = provisions.map(p => `<option value="${p}">${p}</option>`).join('');
         }
 
-        // CSV Export
-        exportCsvBtn.addEventListener('click', () => {
+        // Export Docs (Bulk)
+        exportDocsBtn.addEventListener('click', async () => {
             if (allCases.length === 0) return showNotification('No cases to export.');
             
-            const headers = ['Case Name/Citation', 'Provision/Topic', 'Issues', 'SC Ruling', 'Rationale', 'Date'];
-            const rows = allCases.map(c => [
-                c.caseNameCitation || '',
-                c.provisionTopic || '',
-                (c.issueSuccession || '').replace(/\n/g, ' '),
-                (c.scRuling || '').replace(/\n/g, ' '),
-                (c.rationaleBasis || '').replace(/\n/g, ' '),
-                c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleDateString() : ''
-            ]);
+            try {
+                showNotification('Generating document...', 'info');
+                const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, SectionType } = docx;
 
-            const csvContent = [
-                headers.join(','),
-                ...rows.map(r => r.map(v => `"${v.toString().replace(/"/g, '""')}"`).join(','))
-            ].join('\n');
+                const sections = [];
+                
+                // Filter cases based on current search/filter for export
+                const searchTerm = searchInput.value.toLowerCase();
+                const selectedProvision = provisionFilter.value;
+                const filteredForExport = allCases.filter(c => {
+                    const title = (c.caseNameCitation || c.title || '').toLowerCase();
+                    const issues = (c.issueSuccession || c.issues || '').toLowerCase();
+                    const provision = (c.provisionTopic || c.provision || '').toLowerCase();
+                    const matchesSearch = title.includes(searchTerm) || issues.includes(searchTerm) || provision.includes(searchTerm);
+                    const matchesProvision = selectedProvision === 'All Provisions' || (c.provisionTopic === selectedProvision || c.provision === selectedProvision);
+                    return matchesSearch && matchesProvision;
+                });
 
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            const url = URL.createObjectURL(blob);
-            link.setAttribute("href", url);
-            link.setAttribute("download", `legal_cases_${new Date().toISOString().split('T')[0]}.csv`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showNotification('CSV Exported successfully.');
+                if (filteredForExport.length === 0) return showNotification('No cases found to export.');
+
+                const children = [
+                    new Paragraph({
+                        text: "LEGAL CASE REPOSITORY - CASE BRIEFS",
+                        heading: HeadingLevel.TITLE,
+                        alignment: AlignmentType.CENTER,
+                        spacing: { after: 400 }
+                    }),
+                    new Paragraph({
+                        text: `Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+                        alignment: AlignmentType.CENTER,
+                        spacing: { after: 800 }
+                    })
+                ];
+
+                filteredForExport.forEach((item, index) => {
+                    const combinedTopic = [item.provisionTopic, item.articleCited, item.provision]
+                        .filter(val => val && String(val).trim() !== '')
+                        .map(val => String(val).trim())
+                        .join(' | ');
+
+                    children.push(
+                        new Paragraph({
+                            text: `${index + 1}. ${item.caseNameCitation || item.title || 'Untitled Case'}`,
+                            heading: HeadingLevel.HEADING_1,
+                            spacing: { before: 400, after: 200 }
+                        }),
+                        new Paragraph({
+                            children: [
+                                new TextRun({ text: "PETITIONER: ", bold: true }),
+                                new TextRun(item.petitioner || '—')
+                            ]
+                        }),
+                        new Paragraph({
+                            children: [
+                                new TextRun({ text: "RESPONDENT: ", bold: true }),
+                                new TextRun(item.respondent || '—')
+                            ]
+                        }),
+                        new Paragraph({
+                            children: [
+                                new TextRun({ text: "PROVISIONS: ", bold: true }),
+                                new TextRun(item.provisions || '—')
+                            ]
+                        }),
+                        new Paragraph({
+                            children: [
+                                new TextRun({ text: "TOPIC & ARTICLE CITED: ", bold: true }),
+                                new TextRun(combinedTopic || '—')
+                            ],
+                            spacing: { after: 200 }
+                        }),
+                        new Paragraph({ text: "FACTS:", heading: HeadingLevel.HEADING_2 }),
+                        new Paragraph({ text: item.facts || '—', spacing: { after: 200 } }),
+                        new Paragraph({ text: "ISSUE (SUCCESSION):", heading: HeadingLevel.HEADING_2 }),
+                        new Paragraph({ text: item.issueSuccession || item.issues || '—', spacing: { after: 200 } }),
+                        new Paragraph({ text: "SC RULING:", heading: HeadingLevel.HEADING_2 }),
+                        new Paragraph({ text: item.scRuling || item.ruling || '—', spacing: { after: 200 } }),
+                        new Paragraph({ text: "RATIONALE / CIVIL CODE BASIS:", heading: HeadingLevel.HEADING_2 }),
+                        new Paragraph({ text: item.rationaleBasis || '—', spacing: { after: 200 } }),
+                        new Paragraph({ text: "SIMPLE EXPLANATION:", heading: HeadingLevel.HEADING_2 }),
+                        new Paragraph({ text: item.simpleExplanation || '—', spacing: { after: 200 } }),
+                        new Paragraph({ text: "FULL DIGEST:", heading: HeadingLevel.HEADING_2 }),
+                        new Paragraph({ text: item.fullDigest || item.digest || '—', spacing: { after: 800 } })
+                    );
+                });
+
+                const doc = new Document({
+                    sections: [{
+                        properties: { type: SectionType.CONTINUOUS },
+                        children: children
+                    }]
+                });
+
+                const blob = await Packer.toBlob(doc);
+                saveAs(blob, `legal_cases_export_${new Date().toISOString().split('T')[0]}.docx`);
+                showNotification('Docs Exported successfully.');
+            } catch (error) {
+                console.error("Export error:", error);
+                showNotification('Error exporting Docs: ' + error.message);
+            }
         });
 
         // Clear Database
@@ -419,6 +528,8 @@
                 filtered.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
             }
 
+            filteredCount = filtered.length;
+
             if (allCases.length === 0) {
                 caseListContainer.classList.add('hidden');
                 noResultsEl.classList.remove('hidden');
@@ -435,7 +546,44 @@
             } else {
                 caseListContainer.classList.remove('hidden');
                 noResultsEl.classList.add('hidden');
-                caseListEl.innerHTML = filtered.map((c, index) => {
+
+                // Pagination logic
+                const totalItems = filtered.length;
+                const totalPages = Math.ceil(totalItems / itemsPerPage);
+                if (currentPage > totalPages) currentPage = Math.max(1, totalPages);
+
+                const startIndex = (currentPage - 1) * itemsPerPage;
+                const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+                const paginatedData = filtered.slice(startIndex, endIndex);
+
+                // Update Pagination UI
+                document.getElementById('paginationInfo').textContent = `${totalItems === 0 ? 0 : startIndex + 1} to ${endIndex} of ${totalItems}`;
+                
+                const prevPageBtn = document.getElementById('prevPage');
+                const nextPageBtn = document.getElementById('nextPage');
+                prevPageBtn.disabled = currentPage === 1;
+                nextPageBtn.disabled = currentPage === totalPages || totalPages === 0;
+
+                const pageNumbersEl = document.getElementById('pageNumbers');
+                pageNumbersEl.innerHTML = '';
+                
+                // Simple page number rendering (limit to 5 pages around current)
+                let startPage = Math.max(1, currentPage - 2);
+                let endPage = Math.min(totalPages, startPage + 4);
+                if (endPage - startPage < 4) startPage = Math.max(1, endPage - 4);
+
+                for (let i = startPage; i <= endPage; i++) {
+                    const btn = document.createElement('button');
+                    btn.className = `w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${i === currentPage ? 'bg-black text-white' : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'}`;
+                    btn.textContent = i;
+                    btn.onclick = () => {
+                        currentPage = i;
+                        render();
+                    };
+                    pageNumbersEl.appendChild(btn);
+                }
+
+                caseListEl.innerHTML = paginatedData.map((c, index) => {
                     const combinedTopic = [c.provisionTopic, c.articleCited, c.provision]
                         .filter(val => val && String(val).trim() !== '')
                         .map(val => String(val).trim())
@@ -443,7 +591,7 @@
                     
                     return `
                         <tr class="hover:bg-gray-50/50 transition-colors cursor-pointer group" onclick="openModal('${c.id}')">
-                            <td class="px-6 py-4 text-sm font-medium text-gray-400">${index + 1}</td>
+                            <td class="px-6 py-4 text-sm font-medium text-gray-400">${startIndex + index + 1}</td>
                             <td class="px-6 py-4 text-sm font-semibold text-gray-900">${c.caseNameCitation || c.title || 'Untitled Case'}</td>
                             <td class="px-6 py-4 text-sm text-gray-600">${combinedTopic}</td>
                             <td class="px-6 py-4 text-sm text-gray-600 line-clamp-2 max-w-xs">${c.scRuling || c.ruling || '—'}</td>
@@ -574,57 +722,113 @@
             if (e.target === caseModal) closeModal();
         });
 
-        modalDownload.addEventListener('click', () => {
+        modalDownload.addEventListener('click', async () => {
             if (!selectedCase) return;
             const item = selectedCase;
-            const combinedTopic = [item.provisionTopic, item.articleCited, item.provision]
-                .filter(val => val && String(val).trim() !== '')
-                .map(val => String(val).trim())
-                .join(' | ');
+            
+            try {
+                showNotification('Generating document...', 'info');
+                const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, SectionType } = docx;
 
-            const content = `CASE BRIEF: ${item.caseNameCitation || item.title}
+                const combinedTopic = [item.provisionTopic, item.articleCited, item.provision]
+                    .filter(val => val && String(val).trim() !== '')
+                    .map(val => String(val).trim())
+                    .join(' | ');
 
-PETITIONER: ${item.petitioner || '—'}
-RESPONDENT: ${item.respondent || '—'}
-PROVISIONS: ${item.provisions || '—'}
-TOPIC & ARTICLE CITED: ${combinedTopic || '—'}
+                const doc = new Document({
+                    sections: [{
+                        properties: { type: SectionType.CONTINUOUS },
+                        children: [
+                            new Paragraph({
+                                text: `CASE BRIEF: ${item.caseNameCitation || item.title || 'Untitled Case'}`,
+                                heading: HeadingLevel.TITLE,
+                                spacing: { after: 400 }
+                            }),
+                            new Paragraph({
+                                children: [
+                                    new TextRun({ text: "PETITIONER: ", bold: true }),
+                                    new TextRun(item.petitioner || '—')
+                                ]
+                            }),
+                            new Paragraph({
+                                children: [
+                                    new TextRun({ text: "RESPONDENT: ", bold: true }),
+                                    new TextRun(item.respondent || '—')
+                                ]
+                            }),
+                            new Paragraph({
+                                children: [
+                                    new TextRun({ text: "PROVISIONS: ", bold: true }),
+                                    new TextRun(item.provisions || '—')
+                                ]
+                            }),
+                            new Paragraph({
+                                children: [
+                                    new TextRun({ text: "TOPIC & ARTICLE CITED: ", bold: true }),
+                                    new TextRun(combinedTopic || '—')
+                                ],
+                                spacing: { after: 400 }
+                            }),
+                            new Paragraph({ text: "FACTS:", heading: HeadingLevel.HEADING_2 }),
+                            new Paragraph({ text: item.facts || '—', spacing: { after: 200 } }),
+                            new Paragraph({ text: "ISSUE (SUCCESSION):", heading: HeadingLevel.HEADING_2 }),
+                            new Paragraph({ text: item.issueSuccession || item.issues || '—', spacing: { after: 200 } }),
+                            new Paragraph({ text: "SC RULING:", heading: HeadingLevel.HEADING_2 }),
+                            new Paragraph({ text: item.scRuling || item.ruling || '—', spacing: { after: 200 } }),
+                            new Paragraph({ text: "RATIONALE / CIVIL CODE BASIS:", heading: HeadingLevel.HEADING_2 }),
+                            new Paragraph({ text: item.rationaleBasis || '—', spacing: { after: 200 } }),
+                            new Paragraph({ text: "SIMPLE EXPLANATION:", heading: HeadingLevel.HEADING_2 }),
+                            new Paragraph({ text: item.simpleExplanation || '—', spacing: { after: 200 } }),
+                            new Paragraph({ text: "FULL DIGEST:", heading: HeadingLevel.HEADING_2 }),
+                            new Paragraph({ text: item.fullDigest || item.digest || '—' })
+                        ]
+                    }]
+                });
 
-FACTS:
-${item.facts || '—'}
+                const blob = await Packer.toBlob(doc);
+                saveAs(blob, `${(item.caseNameCitation || item.title || 'case').replace(/[^a-z0-9]/gi, '_').toLowerCase()}_brief.docx`);
+                showNotification('Doc Downloaded successfully.');
+            } catch (error) {
+                console.error("Download error:", error);
+                showNotification('Error generating Doc: ' + error.message);
+            }
+        });
 
-ISSUE (SUCCESSION):
-${item.issueSuccession || item.issues || '—'}
+        // Pagination Event Listeners
+        document.getElementById('prevPage').addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                render();
+            }
+        });
 
-DECISIONS:
-RTC: ${item.rtcDecision || '—'}
-CA: ${item.caDecision || '—'}
-SC: ${item.scRuling || item.ruling || '—'}
+        document.getElementById('nextPage').addEventListener('click', () => {
+            const totalPages = Math.ceil(filteredCount / itemsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                render();
+            }
+        });
 
-RATIONALE / CIVIL CODE BASIS:
-${item.rationaleBasis || '—'}
-
-SIMPLE EXPLANATION:
-${item.simpleExplanation || '—'}
-
-FULL DIGEST:
-${item.fullDigest || item.digest || '—'}
-`;
-
-            const blob = new Blob([content], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `${(item.caseNameCitation || item.title).replace(/[^a-z0-9]/gi, '_').toLowerCase()}_brief.txt`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
+        document.getElementById('rowsPerPage').addEventListener('change', (e) => {
+            itemsPerPage = parseInt(e.target.value);
+            currentPage = 1;
+            render();
         });
 
         // Event Listeners
-        searchInput.addEventListener('input', render);
-        provisionFilter.addEventListener('change', render);
-        sortOrder.addEventListener('change', render);
+        searchInput.addEventListener('input', () => {
+            currentPage = 1;
+            render();
+        });
+        provisionFilter.addEventListener('change', () => {
+            currentPage = 1;
+            render();
+        });
+        sortOrder.addEventListener('change', () => {
+            currentPage = 1;
+            render();
+        });
 
         // Initialize Lucide
         lucide.createIcons();
