@@ -9,7 +9,7 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- docx and FileSaver for Word Export -->
-    <script src="https://unpkg.com/docx@8.2.2/build/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/docx@8.2.2/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -165,9 +165,9 @@
                     <h2 id="modalTitle" class="text-xl font-bold text-gray-900"></h2>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button id="modalDownload" class="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-xl hover:bg-gray-800 transition-all text-xs font-semibold shadow-sm">
-                        <i data-lucide="download" class="w-3.5 h-3.5"></i> Download
-                    </button>
+                    <div id="modalActionButtons" class="flex items-center gap-2">
+                        <!-- Buttons will be injected here -->
+                    </div>
                     <button id="modalClose" class="p-2 rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-all">
                         <i data-lucide="x" class="w-5 h-5"></i>
                     </button>
@@ -178,8 +178,8 @@
                 <!-- Modal content will be injected here -->
             </div>
 
-            <div class="p-6 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
-                <button id="modalCloseFooter" class="px-6 py-2 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors">Close</button>
+            <div id="modalFooter" class="p-6 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+                <!-- Footer buttons will be injected here -->
             </div>
         </div>
     </div>
@@ -206,6 +206,8 @@
         const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
+
+        console.log("Libraries check:", { docx: !!window.docx, saveAs: !!window.saveAs });
 
         let allCases = [];
         let currentUser = null;
@@ -238,10 +240,12 @@
         const modalTitle = document.getElementById('modalTitle');
         const modalContent = document.getElementById('modalContent');
         const modalClose = document.getElementById('modalClose');
-        const modalCloseFooter = document.getElementById('modalCloseFooter');
-        const modalDownload = document.getElementById('modalDownload');
+        const modalActionButtons = document.getElementById('modalActionButtons');
+        const modalFooter = document.getElementById('modalFooter');
 
         let selectedCase = null;
+        let isEditing = false;
+        let editedCase = null;
         let currentPage = 1;
         let itemsPerPage = 10;
         let filteredCount = 0;
@@ -328,8 +332,13 @@
             if (allCases.length === 0) return showNotification('No cases to export.');
             
             try {
+                const docxLib = window.docx;
+                if (!docxLib) {
+                    throw new Error('Word export library (docx) not loaded. Please check your internet connection and refresh.');
+                }
+                
                 showNotification('Generating document...', 'info');
-                const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, SectionType } = docx;
+                const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, SectionType } = docxLib;
 
                 const sections = [];
                 
@@ -421,6 +430,14 @@
                 });
 
                 const blob = await Packer.toBlob(doc);
+                const saveAs = window.saveAs || ((b, n) => {
+                    const url = URL.createObjectURL(b);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = n;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                });
                 saveAs(blob, `legal_cases_export_${new Date().toISOString().split('T')[0]}.docx`);
                 showNotification('Docs Exported successfully.');
             } catch (error) {
@@ -612,9 +629,57 @@
             const item = allCases.find(c => c.id === id);
             if (!item) return;
             selectedCase = item;
+            isEditing = false;
+            editedCase = { ...item };
             
-            modalTitle.textContent = item.caseNameCitation || item.title || 'Untitled Case';
+            renderModal();
+            caseModal.classList.remove('hidden');
+        };
+
+        function renderModal() {
+            const item = isEditing ? editedCase : selectedCase;
             
+            // Update Title
+            if (isEditing) {
+                modalTitle.innerHTML = `
+                    <input type="text" id="edit-caseNameCitation" value="${item.caseNameCitation || item.title || ''}" 
+                        class="w-full text-xl font-bold text-gray-900 bg-white border border-gray-200 rounded-lg px-3 py-1 focus:ring-2 focus:ring-black outline-none"
+                        oninput="updateEditedField('caseNameCitation', this.value)">
+                `;
+            } else {
+                modalTitle.textContent = item.caseNameCitation || item.title || 'Untitled Case';
+            }
+
+            // Update Action Buttons
+            modalActionButtons.innerHTML = '';
+            if (!isEditing) {
+                if (currentUser) {
+                    const editBtn = document.createElement('button');
+                    editBtn.className = "flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all text-xs font-semibold shadow-sm";
+                    editBtn.innerHTML = `<i data-lucide="edit-2" class="w-3.5 h-3.5"></i> Edit`;
+                    editBtn.onclick = () => { isEditing = true; renderModal(); };
+                    modalActionButtons.appendChild(editBtn);
+                }
+                const downloadBtn = document.createElement('button');
+                downloadBtn.className = "flex items-center gap-2 px-4 py-2 bg-black text-white rounded-xl hover:bg-gray-800 transition-all text-xs font-semibold shadow-sm";
+                downloadBtn.innerHTML = `<i data-lucide="download" class="w-3.5 h-3.5"></i> Download`;
+                downloadBtn.onclick = downloadCurrentCase;
+                modalActionButtons.appendChild(downloadBtn);
+            } else {
+                const saveBtn = document.createElement('button');
+                saveBtn.className = "flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all text-xs font-semibold shadow-sm";
+                saveBtn.innerHTML = `<i data-lucide="save" class="w-3.5 h-3.5"></i> Save`;
+                saveBtn.onclick = saveEditedCase;
+                modalActionButtons.appendChild(saveBtn);
+
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = "flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all text-xs font-semibold shadow-sm";
+                cancelBtn.innerHTML = `<i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Cancel`;
+                cancelBtn.onclick = () => { isEditing = false; editedCase = { ...selectedCase }; renderModal(); };
+                modalActionButtons.appendChild(cancelBtn);
+            }
+
+            // Update Content
             const combinedTopic = [item.provisionTopic, item.articleCited, item.provision]
                 .filter(val => val && String(val).trim() !== '')
                 .map(val => String(val).trim())
@@ -624,19 +689,24 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <div class="p-4 bg-gray-50 rounded-2xl border border-gray-100">
                         <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 block mb-1">Petitioner</span>
-                        <p class="text-sm font-medium text-gray-900">${item.petitioner || '—'}</p>
+                        ${isEditing ? `<input type="text" value="${item.petitioner || ''}" class="w-full text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-black" oninput="updateEditedField('petitioner', this.value)">` : `<p class="text-sm font-medium text-gray-900">${item.petitioner || '—'}</p>`}
                     </div>
                     <div class="p-4 bg-gray-50 rounded-2xl border border-gray-100">
                         <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 block mb-1">Respondent</span>
-                        <p class="text-sm font-medium text-gray-900">${item.respondent || '—'}</p>
+                        ${isEditing ? `<input type="text" value="${item.respondent || ''}" class="w-full text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-black" oninput="updateEditedField('respondent', this.value)">` : `<p class="text-sm font-medium text-gray-900">${item.respondent || '—'}</p>`}
                     </div>
                     <div class="p-4 bg-gray-50 rounded-2xl border border-gray-100">
                         <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 block mb-1">Provisions</span>
-                        <p class="text-sm font-medium text-gray-900">${item.provisions || '—'}</p>
+                        ${isEditing ? `<input type="text" value="${item.provisions || ''}" class="w-full text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-black" oninput="updateEditedField('provisions', this.value)">` : `<p class="text-sm font-medium text-gray-900">${item.provisions || '—'}</p>`}
                     </div>
                     <div class="p-4 bg-gray-50 rounded-2xl border border-gray-100">
                         <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 block mb-1">Topic & Article Cited</span>
-                        <p class="text-sm font-medium text-gray-900">${combinedTopic}</p>
+                        ${isEditing ? `
+                            <div class="space-y-2">
+                                <input type="text" placeholder="Topic" value="${item.provisionTopic || ''}" class="w-full text-xs font-medium text-gray-900 bg-white border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-black" oninput="updateEditedField('provisionTopic', this.value)">
+                                <input type="text" placeholder="Article Cited" value="${item.articleCited || ''}" class="w-full text-xs font-medium text-gray-900 bg-white border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-black" oninput="updateEditedField('articleCited', this.value)">
+                            </div>
+                        ` : `<p class="text-sm font-medium text-gray-900">${combinedTopic}</p>`}
                     </div>
                 </div>
 
@@ -646,7 +716,7 @@
                         Facts
                     </h3>
                     <div class="p-5 bg-gray-50 rounded-2xl border border-gray-100">
-                        <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">${item.facts || 'No facts available.'}</p>
+                        ${isEditing ? `<textarea rows="6" class="w-full text-sm text-gray-700 leading-relaxed bg-white border border-gray-200 rounded-lg p-3 outline-none focus:ring-1 focus:ring-black" oninput="updateEditedField('facts', this.value)">${item.facts || ''}</textarea>` : `<p class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">${item.facts || 'No facts available.'}</p>`}
                     </div>
                 </section>
 
@@ -656,22 +726,22 @@
                         Issue (Succession)
                     </h3>
                     <div class="p-5 bg-indigo-50/30 rounded-2xl border border-indigo-100/50">
-                        <p class="text-sm text-indigo-900 leading-relaxed font-medium">${item.issueSuccession || item.issues || 'No issue described.'}</p>
+                        ${isEditing ? `<textarea rows="3" class="w-full text-sm text-indigo-900 leading-relaxed font-medium bg-white border border-indigo-200 rounded-lg p-3 outline-none focus:ring-1 focus:ring-indigo-500" oninput="updateEditedField('issueSuccession', this.value)">${item.issueSuccession || item.issues || ''}</textarea>` : `<p class="text-sm text-indigo-900 leading-relaxed font-medium">${item.issueSuccession || item.issues || 'No issue described.'}</p>`}
                     </div>
                 </section>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="p-5 border border-gray-100 rounded-2xl">
                         <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-2">RTC Decision</span>
-                        <p class="text-sm text-gray-600 leading-relaxed">${item.rtcDecision || '—'}</p>
+                        ${isEditing ? `<textarea rows="2" class="w-full text-sm text-gray-600 leading-relaxed bg-white border border-gray-200 rounded-lg p-2 outline-none focus:ring-1 focus:ring-black" oninput="updateEditedField('rtcDecision', this.value)">${item.rtcDecision || ''}</textarea>` : `<p class="text-sm text-gray-600 leading-relaxed">${item.rtcDecision || '—'}</p>`}
                     </div>
                     <div class="p-5 border border-gray-100 rounded-2xl">
                         <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-2">CA Decision</span>
-                        <p class="text-sm text-gray-600 leading-relaxed">${item.caDecision || '—'}</p>
+                        ${isEditing ? `<textarea rows="2" class="w-full text-sm text-gray-600 leading-relaxed bg-white border border-gray-200 rounded-lg p-2 outline-none focus:ring-1 focus:ring-black" oninput="updateEditedField('caDecision', this.value)">${item.caDecision || ''}</textarea>` : `<p class="text-sm text-gray-600 leading-relaxed">${item.caDecision || '—'}</p>`}
                     </div>
                     <div class="p-5 bg-emerald-50/30 border border-emerald-100/50 rounded-2xl">
                         <span class="text-[10px] font-bold uppercase tracking-widest text-emerald-600 block mb-2">SC Ruling</span>
-                        <p class="text-sm text-emerald-900 font-medium leading-relaxed">${item.scRuling || item.ruling || '—'}</p>
+                        ${isEditing ? `<textarea rows="2" class="w-full text-sm text-emerald-900 font-medium leading-relaxed bg-white border border-emerald-200 rounded-lg p-2 outline-none focus:ring-1 focus:ring-emerald-500" oninput="updateEditedField('scRuling', this.value)">${item.scRuling || item.ruling || ''}</textarea>` : `<p class="text-sm text-emerald-900 font-medium leading-relaxed">${item.scRuling || item.ruling || '—'}</p>`}
                     </div>
                 </div>
 
@@ -682,7 +752,7 @@
                             Rationale / Civil Code Basis
                         </h3>
                         <div class="p-5 bg-gray-50 rounded-2xl border border-gray-100">
-                            <p class="text-sm text-gray-700 leading-relaxed">${item.rationaleBasis || '—'}</p>
+                            ${isEditing ? `<textarea rows="4" class="w-full text-sm text-gray-700 leading-relaxed bg-white border border-gray-200 rounded-lg p-3 outline-none focus:ring-1 focus:ring-black" oninput="updateEditedField('rationaleBasis', this.value)">${item.rationaleBasis || ''}</textarea>` : `<p class="text-sm text-gray-700 leading-relaxed">${item.rationaleBasis || '—'}</p>`}
                         </div>
                     </section>
                     <section>
@@ -691,7 +761,7 @@
                             Simple Explanation
                         </h3>
                         <div class="p-5 bg-amber-50/30 rounded-2xl border border-amber-100/50">
-                            <p class="text-sm text-amber-900 leading-relaxed italic">${item.simpleExplanation || '—'}</p>
+                            ${isEditing ? `<textarea rows="4" class="w-full text-sm text-amber-900 leading-relaxed italic bg-white border border-amber-200 rounded-lg p-3 outline-none focus:ring-1 focus:ring-amber-500" oninput="updateEditedField('simpleExplanation', this.value)">${item.simpleExplanation || ''}</textarea>` : `<p class="text-sm text-amber-900 leading-relaxed italic">${item.simpleExplanation || '—'}</p>`}
                         </div>
                     </section>
                 </div>
@@ -702,33 +772,94 @@
                         Full Digest
                     </h3>
                     <div class="p-6 bg-gray-50 rounded-2xl border border-gray-100">
-                        <div class="prose prose-sm max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap">${item.fullDigest || item.digest || 'No digest available.'}</div>
+                        <div class="prose prose-sm max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap">
+                            ${isEditing ? `<textarea rows="10" class="w-full text-sm text-gray-700 leading-relaxed bg-white border border-gray-200 rounded-lg p-4 outline-none focus:ring-1 focus:ring-black" oninput="updateEditedField('fullDigest', this.value)">${item.fullDigest || item.digest || ''}</textarea>` : (item.fullDigest || item.digest || 'No digest available.')}
+                        </div>
                     </div>
                 </section>
             `;
+
+            // Update Footer
+            modalFooter.innerHTML = '';
+            if (isEditing) {
+                const discardBtn = document.createElement('button');
+                discardBtn.className = "px-6 py-2 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors";
+                discardBtn.textContent = "Discard Changes";
+                discardBtn.onclick = () => { isEditing = false; editedCase = { ...selectedCase }; renderModal(); };
+                modalFooter.appendChild(discardBtn);
+
+                const saveChangesBtn = document.createElement('button');
+                saveChangesBtn.className = "px-6 py-2 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-all shadow-sm";
+                saveChangesBtn.textContent = "Save Changes";
+                saveChangesBtn.onclick = saveEditedCase;
+                modalFooter.appendChild(saveChangesBtn);
+            } else {
+                const closeBtn = document.createElement('button');
+                closeBtn.className = "px-6 py-2 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors";
+                closeBtn.textContent = "Close";
+                closeBtn.onclick = closeModal;
+                modalFooter.appendChild(closeBtn);
+            }
             
-            caseModal.classList.remove('hidden');
             lucide.createIcons();
+        }
+
+        window.updateEditedField = (field, value) => {
+            if (editedCase) {
+                editedCase[field] = value;
+            }
         };
+
+        async function saveEditedCase() {
+            if (!editedCase || !selectedCase) return;
+            
+            try {
+                showNotification('Saving changes...', 'info');
+                const caseRef = doc(db, "cases", selectedCase.id);
+                
+                const updateData = {
+                    ...editedCase,
+                    updatedAt: new Date().toISOString(),
+                    updatedBy: currentUser?.email || 'anonymous'
+                };
+                delete updateData.id; // Don't save ID field into document data
+
+                await setDoc(caseRef, updateData, { merge: true });
+                
+                selectedCase = { ...editedCase };
+                isEditing = false;
+                showNotification('Changes saved successfully.', 'success');
+                renderModal();
+            } catch (error) {
+                console.error("Save error:", error);
+                showNotification('Error saving changes: ' + error.message);
+            }
+        }
 
         const closeModal = () => {
             caseModal.classList.add('hidden');
             selectedCase = null;
+            isEditing = false;
+            editedCase = null;
         };
 
         modalClose.addEventListener('click', closeModal);
-        modalCloseFooter.addEventListener('click', closeModal);
         caseModal.addEventListener('click', (e) => {
             if (e.target === caseModal) closeModal();
         });
 
-        modalDownload.addEventListener('click', async () => {
+        async function downloadCurrentCase() {
             if (!selectedCase) return;
             const item = selectedCase;
             
             try {
+                const docxLib = window.docx;
+                if (!docxLib) {
+                    throw new Error('Word export library (docx) not loaded. Please check your internet connection and refresh.');
+                }
+
                 showNotification('Generating document...', 'info');
-                const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, SectionType } = docx;
+                const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, SectionType } = docxLib;
 
                 const combinedTopic = [item.provisionTopic, item.articleCited, item.provision]
                     .filter(val => val && String(val).trim() !== '')
@@ -786,13 +917,21 @@
                 });
 
                 const blob = await Packer.toBlob(doc);
+                const saveAs = window.saveAs || ((b, n) => {
+                    const url = URL.createObjectURL(b);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = n;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                });
                 saveAs(blob, `${(item.caseNameCitation || item.title || 'case').replace(/[^a-z0-9]/gi, '_').toLowerCase()}_brief.docx`);
                 showNotification('Doc Downloaded successfully.');
             } catch (error) {
                 console.error("Download error:", error);
                 showNotification('Error generating Doc: ' + error.message);
             }
-        });
+        }
 
         // Pagination Event Listeners
         document.getElementById('prevPage').addEventListener('click', () => {
