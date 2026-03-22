@@ -286,11 +286,18 @@
         // Auth Listener
         onAuthStateChanged(auth, (user) => {
             currentUser = user;
+            const isAuthorized = user && user.email === 'ssaclausolaw@gmail.com';
+            
             if (user) {
                 authStatus.textContent = `Logged in as ${user.displayName || user.email}`;
                 loginBtn.classList.add('hidden');
                 logoutBtn.classList.remove('hidden');
-                adminActions.classList.remove('hidden');
+                
+                if (isAuthorized) {
+                    adminActions.classList.remove('hidden');
+                } else {
+                    adminActions.classList.add('hidden');
+                }
             } else {
                 authStatus.textContent = '';
                 loginBtn.classList.remove('hidden');
@@ -658,15 +665,17 @@
 
             // Update Action Buttons
             modalActionButtons.innerHTML = '';
+            const isAuthorized = currentUser && currentUser.email === 'ssaclausolaw@gmail.com';
+
             if (!isEditing) {
-                // Show Edit button if logged in
-                if (currentUser) {
+                // Show Edit button if authorized admin
+                if (isAuthorized) {
                     const editBtn = document.createElement('button');
                     editBtn.className = "flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all text-xs font-semibold shadow-sm";
                     editBtn.innerHTML = `<i data-lucide="edit-2" class="w-3.5 h-3.5"></i> Edit`;
                     editBtn.onclick = () => { isEditing = true; renderModal(); };
                     modalActionButtons.appendChild(editBtn);
-                } else {
+                } else if (!currentUser) {
                     // Optional: Show a hint that login is required to edit
                     const loginHint = document.createElement('span');
                     loginHint.className = "text-[10px] text-gray-400 italic mr-2";
