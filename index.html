@@ -348,49 +348,47 @@
                 <head>
                     <meta charset='utf-8'>
                     <style>
-                        table { border-collapse: collapse; width: 100%; }
-                        th, td { border: 1px solid #ccc; padding: 10px; text-align: left; font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; vertical-align: top; }
-                        th { background-color: #f8f9fa; font-weight: bold; color: #333; }
-                        h2 { font-family: "Segoe UI", Arial, sans-serif; color: #1a1a1a; }
-                        .meta { font-size: 8pt; color: #666; margin-bottom: 20px; }
+                        body { font-family: "Segoe UI", Arial, sans-serif; }
+                        table { border-collapse: collapse; width: 100%; margin-bottom: 30px; }
+                        th, td { border: 1px solid #ccc; padding: 10px; text-align: left; font-size: 10pt; vertical-align: top; }
+                        th { background-color: #f8f9fa; font-weight: bold; color: #333; width: 30%; }
+                        h2 { color: #1a1a1a; border-bottom: 2px solid #000; padding-bottom: 5px; page-break-before: always; }
+                        .first-h2 { page-break-before: auto !important; }
+                        .meta { font-size: 8pt; color: #666; margin-bottom: 20px; text-align: center; }
+                        h1 { text-align: center; }
                     </style>
                 </head>
                 <body>
-                    <h2>Legal Case Repository Export</h2>
+                    <h1>Legal Case Repository Export</h1>
                     <p class="meta">Exported on: ${new Date().toLocaleString()}</p>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width: 25%">Case Name / Citation</th>
-                                <th style="width: 15%">Petitioner</th>
-                                <th style="width: 15%">Respondent</th>
-                                <th style="width: 20%">Provisions</th>
-                                <th style="width: 25%">Topic & Article</th>
-                            </tr>
-                        </thead>
-                        <tbody>
             `;
             
-            cases.forEach(item => {
+            cases.forEach((item, index) => {
                 const combinedTopic = [item.provisionTopic, item.articleCited, item.provision]
                     .filter(val => val && String(val).trim() !== '')
                     .map(val => String(val).trim())
                     .join(' | ') || '—';
 
                 html += `
-                    <tr>
-                        <td>${item.caseNameCitation || item.title || '—'}</td>
-                        <td>${item.petitioner || '—'}</td>
-                        <td>${item.respondent || '—'}</td>
-                        <td>${item.provisions || '—'}</td>
-                        <td>${combinedTopic}</td>
-                    </tr>
+                    <h2 class="${index === 0 ? 'first-h2' : ''}">${item.caseNameCitation || item.title || 'Untitled Case'}</h2>
+                    <table>
+                        <tr><th>Petitioner</th><td>${item.petitioner || '—'}</td></tr>
+                        <tr><th>Respondent</th><td>${item.respondent || '—'}</td></tr>
+                        <tr><th>Provisions</th><td>${item.provisions || '—'}</td></tr>
+                        <tr><th>Topic & Article</th><td>${combinedTopic}</td></tr>
+                        <tr><th>Facts</th><td>${item.facts || '—'}</td></tr>
+                        <tr><th>Issue (Succession)</th><td>${item.issueSuccession || item.issues || '—'}</td></tr>
+                        <tr><th>RTC Decision</th><td>${item.rtcDecision || '—'}</td></tr>
+                        <tr><th>CA Decision</th><td>${item.caDecision || '—'}</td></tr>
+                        <tr><th>SC Ruling</th><td>${item.scRuling || '—'}</td></tr>
+                        <tr><th>Rationale / Basis</th><td>${item.rationaleBasis || '—'}</td></tr>
+                        <tr><th>Simple Explanation</th><td>${item.simpleExplanation || '—'}</td></tr>
+                        <tr><th>Full Digest</th><td>${item.fullDigest || item.digest || '—'}</td></tr>
+                    </table>
                 `;
             });
             
             html += `
-                        </tbody>
-                    </table>
                 </body>
                 </html>
             `;
@@ -430,23 +428,7 @@
             
             try {
                 showNotification('Generating document...', 'info');
-                const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, SectionType } = docxLib;
-
-                const sections = [];
-                
-                // Filter cases based on current search/filter for export
-                const searchTerm = searchInput.value.toLowerCase();
-                const selectedProvision = provisionFilter.value;
-                const filteredForExport = allCases.filter(c => {
-                    const title = (c.caseNameCitation || c.title || '').toLowerCase();
-                    const issues = (c.issueSuccession || c.issues || '').toLowerCase();
-                    const provision = (c.provisionTopic || c.provision || '').toLowerCase();
-                    const matchesSearch = title.includes(searchTerm) || issues.includes(searchTerm) || provision.includes(searchTerm);
-                    const matchesProvision = selectedProvision === 'All Provisions' || (c.provisionTopic === selectedProvision || c.provision === selectedProvision);
-                    return matchesSearch && matchesProvision;
-                });
-
-                if (filteredForExport.length === 0) return showNotification('No cases found to export.');
+                const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, SectionType, Table, TableRow, TableCell, WidthType } = docxLib;
 
                 const children = [
                     new Paragraph({
@@ -461,56 +443,37 @@
                         spacing: { after: 800 }
                     })
                 ];
-
+ 
                 filteredForExport.forEach((item, index) => {
                     const combinedTopic = [item.provisionTopic, item.articleCited, item.provision]
                         .filter(val => val && String(val).trim() !== '')
                         .map(val => String(val).trim())
-                        .join(' | ');
+                        .join(' | ') || '—';
 
                     children.push(
                         new Paragraph({
                             text: `${index + 1}. ${item.caseNameCitation || item.title || 'Untitled Case'}`,
                             heading: HeadingLevel.HEADING_1,
-                            spacing: { before: 400, after: 200 }
+                            spacing: { before: 400, after: 200 },
+                            pageBreakBefore: index > 0
                         }),
-                        new Paragraph({
-                            children: [
-                                new TextRun({ text: "PETITIONER: ", bold: true }),
-                                new TextRun(item.petitioner || '—')
+                        new Table({
+                            width: { size: 100, type: WidthType.PERCENTAGE },
+                            rows: [
+                                new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Petitioner", bold: true })] }), new TableCell({ children: [new Paragraph(item.petitioner || "—")] }) ] }),
+                                new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Respondent", bold: true })] }), new TableCell({ children: [new Paragraph(item.respondent || "—")] }) ] }),
+                                new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Provisions", bold: true })] }), new TableCell({ children: [new Paragraph(item.provisions || "—")] }) ] }),
+                                new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Topic & Article", bold: true })] }), new TableCell({ children: [new Paragraph(combinedTopic)] }) ] }),
+                                new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Facts", bold: true })] }), new TableCell({ children: [new Paragraph(item.facts || "—")] }) ] }),
+                                new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Issue (Succession)", bold: true })] }), new TableCell({ children: [new Paragraph(item.issueSuccession || item.issues || "—")] }) ] }),
+                                new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "RTC Decision", bold: true })] }), new TableCell({ children: [new Paragraph(item.rtcDecision || "—")] }) ] }),
+                                new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "CA Decision", bold: true })] }), new TableCell({ children: [new Paragraph(item.caDecision || "—")] }) ] }),
+                                new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "SC Ruling", bold: true })] }), new TableCell({ children: [new Paragraph(item.scRuling || item.ruling || "—")] }) ] }),
+                                new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Rationale / Basis", bold: true })] }), new TableCell({ children: [new Paragraph(item.rationaleBasis || "—")] }) ] }),
+                                new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Simple Explanation", bold: true })] }), new TableCell({ children: [new Paragraph(item.simpleExplanation || "—")] }) ] }),
+                                new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Full Digest", bold: true })] }), new TableCell({ children: [new Paragraph(item.fullDigest || item.digest || "—")] }) ] }),
                             ]
-                        }),
-                        new Paragraph({
-                            children: [
-                                new TextRun({ text: "RESPONDENT: ", bold: true }),
-                                new TextRun(item.respondent || '—')
-                            ]
-                        }),
-                        new Paragraph({
-                            children: [
-                                new TextRun({ text: "PROVISIONS: ", bold: true }),
-                                new TextRun(item.provisions || '—')
-                            ]
-                        }),
-                        new Paragraph({
-                            children: [
-                                new TextRun({ text: "TOPIC & ARTICLE CITED: ", bold: true }),
-                                new TextRun(combinedTopic || '—')
-                            ],
-                            spacing: { after: 200 }
-                        }),
-                        new Paragraph({ text: "FACTS:", heading: HeadingLevel.HEADING_2 }),
-                        new Paragraph({ text: item.facts || '—', spacing: { after: 200 } }),
-                        new Paragraph({ text: "ISSUE (SUCCESSION):", heading: HeadingLevel.HEADING_2 }),
-                        new Paragraph({ text: item.issueSuccession || item.issues || '—', spacing: { after: 200 } }),
-                        new Paragraph({ text: "SC RULING:", heading: HeadingLevel.HEADING_2 }),
-                        new Paragraph({ text: item.scRuling || item.ruling || '—', spacing: { after: 200 } }),
-                        new Paragraph({ text: "RATIONALE / CIVIL CODE BASIS:", heading: HeadingLevel.HEADING_2 }),
-                        new Paragraph({ text: item.rationaleBasis || '—', spacing: { after: 200 } }),
-                        new Paragraph({ text: "SIMPLE EXPLANATION:", heading: HeadingLevel.HEADING_2 }),
-                        new Paragraph({ text: item.simpleExplanation || '—', spacing: { after: 200 } }),
-                        new Paragraph({ text: "FULL DIGEST:", heading: HeadingLevel.HEADING_2 }),
-                        new Paragraph({ text: item.fullDigest || item.digest || '—', spacing: { after: 800 } })
+                        })
                     );
                 });
 
@@ -966,7 +929,7 @@
 
             try {
                 showNotification('Generating document...', 'info');
-                const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, SectionType } = docxLib;
+                const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, SectionType, Table, TableRow, TableCell, WidthType } = docxLib;
 
                 const combinedTopic = [item.provisionTopic, item.articleCited, item.provision]
                     .filter(val => val && String(val).trim() !== '')
@@ -980,45 +943,26 @@
                             new Paragraph({
                                 text: `CASE BRIEF: ${item.caseNameCitation || item.title || 'Untitled Case'}`,
                                 heading: HeadingLevel.TITLE,
+                                alignment: AlignmentType.CENTER,
                                 spacing: { after: 400 }
                             }),
-                            new Paragraph({
-                                children: [
-                                    new TextRun({ text: "PETITIONER: ", bold: true }),
-                                    new TextRun(item.petitioner || '—')
+                            new Table({
+                                width: { size: 100, type: WidthType.PERCENTAGE },
+                                rows: [
+                                    new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Petitioner", bold: true })] }), new TableCell({ children: [new Paragraph(item.petitioner || "—")] }) ] }),
+                                    new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Respondent", bold: true })] }), new TableCell({ children: [new Paragraph(item.respondent || "—")] }) ] }),
+                                    new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Provisions", bold: true })] }), new TableCell({ children: [new Paragraph(item.provisions || "—")] }) ] }),
+                                    new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Topic & Article", bold: true })] }), new TableCell({ children: [new Paragraph(combinedTopic)] }) ] }),
+                                    new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Facts", bold: true })] }), new TableCell({ children: [new Paragraph(item.facts || "—")] }) ] }),
+                                    new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Issue (Succession)", bold: true })] }), new TableCell({ children: [new Paragraph(item.issueSuccession || item.issues || "—")] }) ] }),
+                                    new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "RTC Decision", bold: true })] }), new TableCell({ children: [new Paragraph(item.rtcDecision || "—")] }) ] }),
+                                    new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "CA Decision", bold: true })] }), new TableCell({ children: [new Paragraph(item.caDecision || "—")] }) ] }),
+                                    new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "SC Ruling", bold: true })] }), new TableCell({ children: [new Paragraph(item.scRuling || item.ruling || "—")] }) ] }),
+                                    new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Rationale / Basis", bold: true })] }), new TableCell({ children: [new Paragraph(item.rationaleBasis || "—")] }) ] }),
+                                    new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Simple Explanation", bold: true })] }), new TableCell({ children: [new Paragraph(item.simpleExplanation || "—")] }) ] }),
+                                    new TableRow({ children: [ new TableCell({ children: [new Paragraph({ text: "Full Digest", bold: true })] }), new TableCell({ children: [new Paragraph(item.fullDigest || item.digest || "—")] }) ] }),
                                 ]
-                            }),
-                            new Paragraph({
-                                children: [
-                                    new TextRun({ text: "RESPONDENT: ", bold: true }),
-                                    new TextRun(item.respondent || '—')
-                                ]
-                            }),
-                            new Paragraph({
-                                children: [
-                                    new TextRun({ text: "PROVISIONS: ", bold: true }),
-                                    new TextRun(item.provisions || '—')
-                                ]
-                            }),
-                            new Paragraph({
-                                children: [
-                                    new TextRun({ text: "TOPIC & ARTICLE CITED: ", bold: true }),
-                                    new TextRun(combinedTopic || '—')
-                                ],
-                                spacing: { after: 400 }
-                            }),
-                            new Paragraph({ text: "FACTS:", heading: HeadingLevel.HEADING_2 }),
-                            new Paragraph({ text: item.facts || '—', spacing: { after: 200 } }),
-                            new Paragraph({ text: "ISSUE (SUCCESSION):", heading: HeadingLevel.HEADING_2 }),
-                            new Paragraph({ text: item.issueSuccession || item.issues || '—', spacing: { after: 200 } }),
-                            new Paragraph({ text: "SC RULING:", heading: HeadingLevel.HEADING_2 }),
-                            new Paragraph({ text: item.scRuling || item.ruling || '—', spacing: { after: 200 } }),
-                            new Paragraph({ text: "RATIONALE / CIVIL CODE BASIS:", heading: HeadingLevel.HEADING_2 }),
-                            new Paragraph({ text: item.rationaleBasis || '—', spacing: { after: 200 } }),
-                            new Paragraph({ text: "SIMPLE EXPLANATION:", heading: HeadingLevel.HEADING_2 }),
-                            new Paragraph({ text: item.simpleExplanation || '—', spacing: { after: 200 } }),
-                            new Paragraph({ text: "FULL DIGEST:", heading: HeadingLevel.HEADING_2 }),
-                            new Paragraph({ text: item.fullDigest || item.digest || '—' })
+                            })
                         ]
                     }]
                 });
