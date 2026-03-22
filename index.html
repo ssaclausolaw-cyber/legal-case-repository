@@ -217,9 +217,10 @@
         logoutBtn.addEventListener('click', () => signOut(auth));
 
         // Initial fetch
-        const q = query(collection(db, "cases"), orderBy("createdAt", "desc"));
+        const q = collection(db, "cases");
         onSnapshot(q, (snapshot) => {
             allCases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            console.log("Fetched cases:", allCases.length);
             updateProvisions();
             render();
             loadingEl.classList.add('hidden');
@@ -230,7 +231,7 @@
         });
 
         function updateProvisions() {
-            const provisions = ['All Provisions', ...new Set(allCases.map(c => c.provisionTopic).filter(Boolean))];
+            const provisions = ['All Provisions', ...new Set(allCases.map(c => c.provisionTopic || c.provision).filter(Boolean))];
             provisionFilter.innerHTML = provisions.map(p => `<option value="${p}">${p}</option>`).join('');
         }
 
@@ -343,10 +344,15 @@
             const sort = sortOrder.value;
 
             let filtered = allCases.filter(c => {
-                const matchesSearch = (c.caseNameCitation || '').toLowerCase().includes(searchTerm) || 
-                                     (c.issueSuccession || '').toLowerCase().includes(searchTerm) ||
-                                     (c.provisionTopic || '').toLowerCase().includes(searchTerm);
-                const matchesProvision = selectedProvision === 'All Provisions' || c.provisionTopic === selectedProvision;
+                const title = (c.caseNameCitation || c.title || '').toLowerCase();
+                const issues = (c.issueSuccession || c.issues || '').toLowerCase();
+                const provision = (c.provisionTopic || c.provision || '').toLowerCase();
+                
+                const matchesSearch = title.includes(searchTerm) || 
+                                     issues.includes(searchTerm) ||
+                                     provision.includes(searchTerm);
+                const matchesProvision = selectedProvision === 'All Provisions' || 
+                                       (c.provisionTopic === selectedProvision || c.provision === selectedProvision);
                 return matchesSearch && matchesProvision;
             });
 
@@ -354,14 +360,24 @@
             if (sort === 'oldest') {
                 filtered.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
             } else if (sort === 'alphabetical') {
-                filtered.sort((a, b) => (a.caseNameCitation || '').localeCompare(b.caseNameCitation || ''));
+                filtered.sort((a, b) => (a.caseNameCitation || a.title || '').localeCompare(b.caseNameCitation || b.title || ''));
             } else {
                 filtered.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
             }
 
-            if (filtered.length === 0) {
+            if (allCases.length === 0) {
                 caseListEl.classList.add('hidden');
                 noResultsEl.classList.remove('hidden');
+                noResultsEl.innerHTML = `
+                    <div class="flex flex-col items-center gap-4">
+                        <p class="text-gray-500">The database is currently empty.</p>
+                        <p class="text-xs text-gray-400">Click "Import" to upload your cases.</p>
+                    </div>
+                `;
+            } else if (filtered.length === 0) {
+                caseListEl.classList.add('hidden');
+                noResultsEl.classList.remove('hidden');
+                noResultsEl.innerHTML = `<p class="text-gray-500">No cases found matching your criteria.</p>`;
             } else {
                 caseListEl.classList.remove('hidden');
                 noResultsEl.classList.add('hidden');
@@ -369,16 +385,16 @@
                     <div class="case-card bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                         <div class="flex justify-between items-start mb-4">
                             <span class="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-lg text-[10px] font-bold uppercase tracking-wider">
-                                ${c.provisionTopic || 'No Provision'}
+                                ${c.provisionTopic || c.provision || 'No Provision'}
                             </span>
                             <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                                ${c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleDateString() : 'Draft'}
+                                ${c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleDateString() : 'Imported'}
                             </span>
                         </div>
-                        <h3 class="text-lg font-bold text-gray-900 mb-2">${c.caseNameCitation || 'Untitled Case'}</h3>
-                        <p class="text-sm text-gray-600 line-clamp-3 mb-4">${c.issueSuccession || 'No issues described.'}</p>
+                        <h3 class="text-lg font-bold text-gray-900 mb-2">${c.caseNameCitation || c.title || 'Untitled Case'}</h3>
+                        <p class="text-sm text-gray-600 line-clamp-3 mb-4">${c.issueSuccession || c.issues || 'No issues described.'}</p>
                         <div class="flex items-center gap-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                            <span class="flex items-center gap-1"><i data-lucide="file-text" class="w-3 h-3"></i> ${c.scRuling ? 'Ruling Available' : 'No Ruling'}</span>
+                            <span class="flex items-center gap-1"><i data-lucide="file-text" class="w-3 h-3"></i> ${ (c.scRuling || c.ruling) ? 'Ruling Available' : 'No Ruling'}</span>
                             <span class="flex items-center gap-1"><i data-lucide="tag" class="w-3 h-3"></i> ${c.status || 'Active'}</span>
                         </div>
                     </div>
