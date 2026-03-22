@@ -100,12 +100,56 @@
             <p class="text-sm text-gray-500">Connecting to database...</p>
         </div>
 
-        <div id="caseList" class="grid grid-cols-1 gap-4 hidden">
-            <!-- Cases will be injected here -->
+        <div id="caseListContainer" class="hidden bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50/50 border-b border-gray-100">
+                            <th class="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400 w-16">#</th>
+                            <th class="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Case Name & Citation</th>
+                            <th class="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Provision / Topic / Article</th>
+                            <th class="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">SC Ruling</th>
+                            <th class="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Simple Explanation</th>
+                            <th class="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="caseList" class="divide-y divide-gray-100">
+                        <!-- Cases will be injected here -->
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <div id="noResults" class="hidden text-center py-20">
             <p class="text-gray-500">No cases found matching your criteria.</p>
+        </div>
+    </div>
+
+    <!-- Case Detail Modal -->
+    <div id="caseModal" class="fixed inset-0 z-[70] hidden flex items-center justify-center p-4 md:p-8 bg-black/40 backdrop-blur-sm">
+        <div class="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div class="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                <div class="flex-1 mr-4">
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1 block">Case Details & Decisions</span>
+                    <h2 id="modalTitle" class="text-xl font-bold text-gray-900"></h2>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="modalDownload" class="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-xl hover:bg-gray-800 transition-all text-xs font-semibold shadow-sm">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i> Download
+                    </button>
+                    <button id="modalClose" class="p-2 rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-all">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div id="modalContent" class="overflow-y-auto p-8 space-y-8">
+                <!-- Modal content will be injected here -->
+            </div>
+
+            <div class="p-6 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+                <button id="modalCloseFooter" class="px-6 py-2 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors">Close</button>
+            </div>
         </div>
     </div>
 
@@ -136,6 +180,7 @@
         let currentUser = null;
 
         const caseListEl = document.getElementById('caseList');
+        const caseListContainer = document.getElementById('caseListContainer');
         const loadingEl = document.getElementById('loading');
         const noResultsEl = document.getElementById('noResults');
         const searchInput = document.getElementById('searchInput');
@@ -157,6 +202,15 @@
         const confirmMessage = document.getElementById('confirmMessage');
         const confirmOk = document.getElementById('confirmOk');
         const confirmCancel = document.getElementById('confirmCancel');
+
+        const caseModal = document.getElementById('caseModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalContent = document.getElementById('modalContent');
+        const modalClose = document.getElementById('modalClose');
+        const modalCloseFooter = document.getElementById('modalCloseFooter');
+        const modalDownload = document.getElementById('modalDownload');
+
+        let selectedCase = null;
 
         function showNotification(message, type = 'info') {
             notificationText.textContent = message;
@@ -224,7 +278,7 @@
             updateProvisions();
             render();
             loadingEl.classList.add('hidden');
-            caseListEl.classList.remove('hidden');
+            caseListContainer.classList.remove('hidden');
         }, (error) => {
             console.error("Firestore error:", error);
             loadingEl.innerHTML = `<p class="text-red-500 font-medium">Error connecting to database. Please check your connection.</p>`;
@@ -366,7 +420,7 @@
             }
 
             if (allCases.length === 0) {
-                caseListEl.classList.add('hidden');
+                caseListContainer.classList.add('hidden');
                 noResultsEl.classList.remove('hidden');
                 noResultsEl.innerHTML = `
                     <div class="flex flex-col items-center gap-4">
@@ -375,33 +429,197 @@
                     </div>
                 `;
             } else if (filtered.length === 0) {
-                caseListEl.classList.add('hidden');
+                caseListContainer.classList.add('hidden');
                 noResultsEl.classList.remove('hidden');
                 noResultsEl.innerHTML = `<p class="text-gray-500">No cases found matching your criteria.</p>`;
             } else {
-                caseListEl.classList.remove('hidden');
+                caseListContainer.classList.remove('hidden');
                 noResultsEl.classList.add('hidden');
-                caseListEl.innerHTML = filtered.map(c => `
-                    <div class="case-card bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                        <div class="flex justify-between items-start mb-4">
-                            <span class="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-lg text-[10px] font-bold uppercase tracking-wider">
-                                ${c.provisionTopic || c.provision || 'No Provision'}
-                            </span>
-                            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                                ${c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleDateString() : 'Imported'}
-                            </span>
-                        </div>
-                        <h3 class="text-lg font-bold text-gray-900 mb-2">${c.caseNameCitation || c.title || 'Untitled Case'}</h3>
-                        <p class="text-sm text-gray-600 line-clamp-3 mb-4">${c.issueSuccession || c.issues || 'No issues described.'}</p>
-                        <div class="flex items-center gap-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                            <span class="flex items-center gap-1"><i data-lucide="file-text" class="w-3 h-3"></i> ${ (c.scRuling || c.ruling) ? 'Ruling Available' : 'No Ruling'}</span>
-                            <span class="flex items-center gap-1"><i data-lucide="tag" class="w-3 h-3"></i> ${c.status || 'Active'}</span>
-                        </div>
-                    </div>
-                `).join('');
+                caseListEl.innerHTML = filtered.map((c, index) => {
+                    const combinedTopic = [c.provisionTopic, c.articleCited, c.provision]
+                        .filter(val => val && String(val).trim() !== '')
+                        .map(val => String(val).trim())
+                        .join(' | ') || '—';
+                    
+                    return `
+                        <tr class="hover:bg-gray-50/50 transition-colors cursor-pointer group" onclick="openModal('${c.id}')">
+                            <td class="px-6 py-4 text-sm font-medium text-gray-400">${index + 1}</td>
+                            <td class="px-6 py-4 text-sm font-semibold text-gray-900">${c.caseNameCitation || c.title || 'Untitled Case'}</td>
+                            <td class="px-6 py-4 text-sm text-gray-600">${combinedTopic}</td>
+                            <td class="px-6 py-4 text-sm text-gray-600 line-clamp-2 max-w-xs">${c.scRuling || c.ruling || '—'}</td>
+                            <td class="px-6 py-4 text-sm text-gray-500 italic line-clamp-2 max-w-xs">${c.simpleExplanation || '—'}</td>
+                            <td class="px-6 py-4 text-right">
+                                <button class="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm">
+                                    Full Details
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
                 lucide.createIcons();
             }
         }
+
+        window.openModal = (id) => {
+            const item = allCases.find(c => c.id === id);
+            if (!item) return;
+            selectedCase = item;
+            
+            modalTitle.textContent = item.caseNameCitation || item.title || 'Untitled Case';
+            
+            const combinedTopic = [item.provisionTopic, item.articleCited, item.provision]
+                .filter(val => val && String(val).trim() !== '')
+                .map(val => String(val).trim())
+                .join(' | ') || '—';
+
+            modalContent.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                        <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 block mb-1">Petitioner</span>
+                        <p class="text-sm font-medium text-gray-900">${item.petitioner || '—'}</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                        <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 block mb-1">Respondent</span>
+                        <p class="text-sm font-medium text-gray-900">${item.respondent || '—'}</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                        <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 block mb-1">Provisions</span>
+                        <p class="text-sm font-medium text-gray-900">${item.provisions || '—'}</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                        <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 block mb-1">Topic & Article Cited</span>
+                        <p class="text-sm font-medium text-gray-900">${combinedTopic}</p>
+                    </div>
+                </div>
+
+                <section>
+                    <h3 class="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                        <div class="w-1 h-4 bg-black rounded-full"></div>
+                        Facts
+                    </h3>
+                    <div class="p-5 bg-gray-50 rounded-2xl border border-gray-100">
+                        <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">${item.facts || 'No facts available.'}</p>
+                    </div>
+                </section>
+
+                <section>
+                    <h3 class="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                        <div class="w-1 h-4 bg-black rounded-full"></div>
+                        Issue (Succession)
+                    </h3>
+                    <div class="p-5 bg-indigo-50/30 rounded-2xl border border-indigo-100/50">
+                        <p class="text-sm text-indigo-900 leading-relaxed font-medium">${item.issueSuccession || item.issues || 'No issue described.'}</p>
+                    </div>
+                </section>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="p-5 border border-gray-100 rounded-2xl">
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-2">RTC Decision</span>
+                        <p class="text-sm text-gray-600 leading-relaxed">${item.rtcDecision || '—'}</p>
+                    </div>
+                    <div class="p-5 border border-gray-100 rounded-2xl">
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-2">CA Decision</span>
+                        <p class="text-sm text-gray-600 leading-relaxed">${item.caDecision || '—'}</p>
+                    </div>
+                    <div class="p-5 bg-emerald-50/30 border border-emerald-100/50 rounded-2xl">
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-emerald-600 block mb-2">SC Ruling</span>
+                        <p class="text-sm text-emerald-900 font-medium leading-relaxed">${item.scRuling || item.ruling || '—'}</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <section>
+                        <h3 class="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                            <div class="w-1 h-4 bg-black rounded-full"></div>
+                            Rationale / Civil Code Basis
+                        </h3>
+                        <div class="p-5 bg-gray-50 rounded-2xl border border-gray-100">
+                            <p class="text-sm text-gray-700 leading-relaxed">${item.rationaleBasis || '—'}</p>
+                        </div>
+                    </section>
+                    <section>
+                        <h3 class="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                            <div class="w-1 h-4 bg-black rounded-full"></div>
+                            Simple Explanation
+                        </h3>
+                        <div class="p-5 bg-amber-50/30 rounded-2xl border border-amber-100/50">
+                            <p class="text-sm text-amber-900 leading-relaxed italic">${item.simpleExplanation || '—'}</p>
+                        </div>
+                    </section>
+                </div>
+
+                <section>
+                    <h3 class="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                        <div class="w-1 h-4 bg-black rounded-full"></div>
+                        Full Digest
+                    </h3>
+                    <div class="p-6 bg-gray-50 rounded-2xl border border-gray-100">
+                        <div class="prose prose-sm max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap">${item.fullDigest || item.digest || 'No digest available.'}</div>
+                    </div>
+                </section>
+            `;
+            
+            caseModal.classList.remove('hidden');
+            lucide.createIcons();
+        };
+
+        const closeModal = () => {
+            caseModal.classList.add('hidden');
+            selectedCase = null;
+        };
+
+        modalClose.addEventListener('click', closeModal);
+        modalCloseFooter.addEventListener('click', closeModal);
+        caseModal.addEventListener('click', (e) => {
+            if (e.target === caseModal) closeModal();
+        });
+
+        modalDownload.addEventListener('click', () => {
+            if (!selectedCase) return;
+            const item = selectedCase;
+            const combinedTopic = [item.provisionTopic, item.articleCited, item.provision]
+                .filter(val => val && String(val).trim() !== '')
+                .map(val => String(val).trim())
+                .join(' | ');
+
+            const content = `CASE BRIEF: ${item.caseNameCitation || item.title}
+
+PETITIONER: ${item.petitioner || '—'}
+RESPONDENT: ${item.respondent || '—'}
+PROVISIONS: ${item.provisions || '—'}
+TOPIC & ARTICLE CITED: ${combinedTopic || '—'}
+
+FACTS:
+${item.facts || '—'}
+
+ISSUE (SUCCESSION):
+${item.issueSuccession || item.issues || '—'}
+
+DECISIONS:
+RTC: ${item.rtcDecision || '—'}
+CA: ${item.caDecision || '—'}
+SC: ${item.scRuling || item.ruling || '—'}
+
+RATIONALE / CIVIL CODE BASIS:
+${item.rationaleBasis || '—'}
+
+SIMPLE EXPLANATION:
+${item.simpleExplanation || '—'}
+
+FULL DIGEST:
+${item.fullDigest || item.digest || '—'}
+`;
+
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${(item.caseNameCitation || item.title).replace(/[^a-z0-9]/gi, '_').toLowerCase()}_brief.txt`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        });
 
         // Event Listeners
         searchInput.addEventListener('input', render);
