@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legal Case Repository - Standalone</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .case-card:hover { transform: translateY(-2px); transition: all 0.2s ease; }
+    </style>
+<script src="/_aistudio-iframe.js"></script></head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+    <div id="app" class="max-w-6xl mx-auto p-4 md:p-8">
+        <!-- Header -->
+        <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h1 class="text-3xl font-bold tracking-tight">Legal Case Repository</h1>
+                <p class="text-sm text-gray-500 mt-1">Full Standalone Database & Admin Tool</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+                <div id="adminActions" class="hidden flex items-center gap-2">
+                    <button id="importBtn" class="flex items-center gap-2 px-3 py-2 bg-black text-white rounded-xl text-xs font-bold hover:bg-gray-800 transition-all">
+                        <i data-lucide="upload" class="w-3.5 h-3.5"></i> Import
+                    </button>
+                    <button id="clearBtn" class="flex items-center gap-2 px-3 py-2 bg-red-50 text-red-600 border border-red-100 rounded-xl text-xs font-bold hover:bg-red-100 transition-all">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Clear
+                    </button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="authStatus" class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mr-2"></span>
+                    <button id="exportCsvBtn" class="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200 transition-all">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i> CSV
+                    </button>
+                    <button id="loginBtn" class="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all">
+                        <i data-lucide="log-in" class="w-3.5 h-3.5"></i> Admin Login
+                    </button>
+                    <button id="logoutBtn" class="hidden flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200 transition-all">
+                        <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Logout
+                    </button>
+                </div>
+                <div class="relative">
+                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"></i>
+                    <input 
+                        type="text" 
+                        id="searchInput"
+                        placeholder="Search cases..."
+                        class="pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-black/5 w-48 md:w-64"
+                    >
+                </div>
+            </div>
+        </header>
+
+        <input type="file" id="fileInput" class="hidden" accept=".json,.csv">
+
+        <!-- Custom Notification -->
+        <div id="notification" class="fixed bottom-4 right-4 z-50 transform translate-y-20 opacity-0 transition-all duration-300">
+            <div class="bg-gray-900 text-white px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 border border-white/10">
+                <span id="notificationText" class="text-sm font-medium"></span>
+            </div>
+        </div>
+
+        <!-- Custom Confirmation Modal -->
+        <div id="confirmModal" class="fixed inset-0 z-[60] hidden flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div class="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-100">
+                <h3 class="text-lg font-bold text-gray-900 mb-2">Are you sure?</h3>
+                <p id="confirmMessage" class="text-sm text-gray-500 mb-6"></p>
+                <div class="flex gap-3">
+                    <button id="confirmCancel" class="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-200 transition-all">Cancel</button>
+                    <button id="confirmOk" class="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-all">Yes, Clear All</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+            <div class="space-y-1">
+                <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Filter by Provision</label>
+                <select id="provisionFilter" class="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm appearance-none cursor-pointer">
+                    <option value="All Provisions">All Provisions</option>
+                </select>
+            </div>
+            <div class="space-y-1">
+                <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Sort by</label>
+                <select id="sortOrder" class="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm appearance-none cursor-pointer">
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                    <option value="alphabetical">Alphabetical</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div id="loading" class="flex flex-col items-center justify-center py-20">
+            <div class="w-8 h-8 border-4 border-gray-200 border-t-black rounded-full animate-spin mb-4"></div>
+            <p class="text-sm text-gray-500">Connecting to database...</p>
+        </div>
+
+        <div id="caseList" class="grid grid-cols-1 gap-4 hidden">
+            <!-- Cases will be injected here -->
+        </div>
+
+        <div id="noResults" class="hidden text-center py-20">
+            <p class="text-gray-500">No cases found matching your criteria.</p>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, onSnapshot, query, orderBy, writeBatch, doc, deleteDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+        // Firebase Configuration
+        const firebaseConfig = {
+            projectId: "gen-lang-client-0585193247",
+            appId: "1:322011309302:web:a54588bec4ea267ba338d7",
+            apiKey: "AIzaSyAdcJaRm_clIJr-EAASeTD39mCg2O6zdpQ",
+            authDomain: "gen-lang-client-0585193247.firebaseapp.com",
+            firestoreDatabaseId: "ai-studio-526651e0-07fc-46a3-afc0-733e2988672f",
+            storageBucket: "gen-lang-client-0585193247.firebasestorage.app",
+            messagingSenderId: "322011309302"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        let allCases = [];
+        let currentUser = null;
+
+        const caseListEl = document.getElementById('caseList');
+        const loadingEl = document.getElementById('loading');
+        const noResultsEl = document.getElementById('noResults');
+        const searchInput = document.getElementById('searchInput');
+        const provisionFilter = document.getElementById('provisionFilter');
+        const sortOrder = document.getElementById('sortOrder');
+        
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const adminActions = document.getElementById('adminActions');
+        const importBtn = document.getElementById('importBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const exportCsvBtn = document.getElementById('exportCsvBtn');
+        const fileInput = document.getElementById('fileInput');
+
+        const authStatus = document.getElementById('authStatus');
+        const notification = document.getElementById('notification');
+        const notificationText = document.getElementById('notificationText');
+        const confirmModal = document.getElementById('confirmModal');
+        const confirmMessage = document.getElementById('confirmMessage');
+        const confirmOk = document.getElementById('confirmOk');
+        const confirmCancel = document.getElementById('confirmCancel');
+
+        function showNotification(message, type = 'info') {
+            notificationText.textContent = message;
+            notification.classList.remove('translate-y-20', 'opacity-0');
+            notification.classList.add('translate-y-0', 'opacity-100');
+            
+            setTimeout(() => {
+                notification.classList.add('translate-y-20', 'opacity-0');
+                notification.classList.remove('translate-y-0', 'opacity-100');
+            }, 5000);
+        }
+
+        function showConfirm(message, onConfirm) {
+            confirmMessage.textContent = message;
+            confirmModal.classList.remove('hidden');
+            
+            const handleOk = () => {
+                onConfirm();
+                close();
+            };
+            const close = () => {
+                confirmModal.classList.add('hidden');
+                confirmOk.removeEventListener('click', handleOk);
+                confirmCancel.removeEventListener('click', close);
+            };
+            
+            confirmOk.addEventListener('click', handleOk);
+            confirmCancel.addEventListener('click', close);
+        }
+
+        // Auth Listener
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            if (user) {
+                authStatus.textContent = `Logged in as ${user.displayName || user.email}`;
+                loginBtn.classList.add('hidden');
+                logoutBtn.classList.remove('hidden');
+                adminActions.classList.remove('hidden');
+            } else {
+                authStatus.textContent = '';
+                loginBtn.classList.remove('hidden');
+                logoutBtn.classList.add('hidden');
+                adminActions.classList.add('hidden');
+            }
+        });
+
+        // Login/Logout
+        loginBtn.addEventListener('click', async () => {
+            try {
+                authStatus.textContent = 'Logging in...';
+                await signInWithPopup(auth, provider);
+            } catch (error) {
+                authStatus.textContent = 'Login failed';
+                console.error("Login error:", error);
+                showNotification("Login failed: " + error.message + "\n\nNote: If you are running this file locally (file://), Google Login may be restricted by Firebase. Try hosting it on a web server or using the main app.");
+            }
+        });
+        logoutBtn.addEventListener('click', () => signOut(auth));
+
+        // Initial fetch
+        const q = query(collection(db, "cases"), orderBy("createdAt", "desc"));
+        onSnapshot(q, (snapshot) => {
+            allCases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            updateProvisions();
+            render();
+            loadingEl.classList.add('hidden');
+            caseListEl.classList.remove('hidden');
+        }, (error) => {
+            console.error("Firestore error:", error);
+            loadingEl.innerHTML = `<p class="text-red-500 font-medium">Error connecting to database. Please check your connection.</p>`;
+        });
+
+        function updateProvisions() {
+            const provisions = ['All Provisions', ...new Set(allCases.map(c => c.provision).filter(Boolean))];
+            provisionFilter.innerHTML = provisions.map(p => `<option value="${p}">${p}</option>`).join('');
+        }
+
+        // CSV Export
+        exportCsvBtn.addEventListener('click', () => {
+            if (allCases.length === 0) return showNotification('No cases to export.');
+            
+            const headers = ['Title', 'Provision', 'Issues', 'Ruling', 'Status', 'Date'];
+            const rows = allCases.map(c => [
+                c.title || '',
+                c.provision || '',
+                (c.issues || '').replace(/\n/g, ' '),
+                (c.ruling || '').replace(/\n/g, ' '),
+                c.status || 'Active',
+                c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleDateString() : ''
+            ]);
+
+            const csvContent = [
+                headers.join(','),
+                ...rows.map(r => r.map(v => `"${v.toString().replace(/"/g, '""')}"`).join(','))
+            ].join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `legal_cases_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showNotification('CSV Exported successfully.');
+        });
+
+        // Clear Database
+        clearBtn.addEventListener('click', () => {
+            showConfirm('Are you sure you want to clear the entire database? This cannot be undone.', async () => {
+                try {
+                    const batch = writeBatch(db);
+                    allCases.forEach(c => {
+                        batch.delete(doc(db, "cases", c.id));
+                    });
+                    await batch.commit();
+                    showNotification('Database cleared successfully.');
+                } catch (error) {
+                    showNotification('Error clearing database: ' + error.message);
+                }
+            });
+        });
+
+        // Import
+        importBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                try {
+                    const content = event.target.result;
+                    let data = [];
+                    
+                    if (file.name.endsWith('.json')) {
+                        data = JSON.parse(content);
+                    } else if (file.name.endsWith('.csv')) {
+                        const lines = content.split('\n');
+                        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+                        data = lines.slice(1).filter(l => l.trim()).map(line => {
+                            const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+                            const obj = {};
+                            headers.forEach((h, i) => {
+                                if (h.toLowerCase() === 'title') obj.title = values[i];
+                                if (h.toLowerCase() === 'provision') obj.provision = values[i];
+                                if (h.toLowerCase() === 'issues') obj.issues = values[i];
+                                if (h.toLowerCase() === 'ruling') obj.ruling = values[i];
+                                if (h.toLowerCase() === 'status') obj.status = values[i];
+                            });
+                            return obj;
+                        });
+                    }
+
+                    if (!Array.isArray(data)) throw new Error('Invalid data format');
+
+                    const batch = writeBatch(db);
+                    data.forEach(item => {
+                        const newDoc = doc(collection(db, "cases"));
+                        batch.set(newDoc, {
+                            ...item,
+                            createdAt: serverTimestamp(),
+                            updatedAt: serverTimestamp()
+                        });
+                    });
+                    await batch.commit();
+                    showNotification(`Successfully imported ${data.length} cases.`);
+                } catch (error) {
+                    showNotification('Error importing data: ' + error.message);
+                }
+                fileInput.value = '';
+            };
+            reader.readAsText(file);
+        });
+
+        function render() {
+            const searchTerm = searchInput.value.toLowerCase();
+            const selectedProvision = provisionFilter.value;
+            const sort = sortOrder.value;
+
+            let filtered = allCases.filter(c => {
+                const matchesSearch = (c.title || '').toLowerCase().includes(searchTerm) || 
+                                     (c.issues || '').toLowerCase().includes(searchTerm) ||
+                                     (c.provision || '').toLowerCase().includes(searchTerm);
+                const matchesProvision = selectedProvision === 'All Provisions' || c.provision === selectedProvision;
+                return matchesSearch && matchesProvision;
+            });
+
+            // Sorting
+            if (sort === 'oldest') {
+                filtered.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+            } else if (sort === 'alphabetical') {
+                filtered.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+            } else {
+                filtered.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+            }
+
+            if (filtered.length === 0) {
+                caseListEl.classList.add('hidden');
+                noResultsEl.classList.remove('hidden');
+            } else {
+                caseListEl.classList.remove('hidden');
+                noResultsEl.classList.add('hidden');
+                caseListEl.innerHTML = filtered.map(c => `
+                    <div class="case-card bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                        <div class="flex justify-between items-start mb-4">
+                            <span class="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                                ${c.provision || 'No Provision'}
+                            </span>
+                            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                                ${c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleDateString() : 'Draft'}
+                            </span>
+                        </div>
+                        <h3 class="text-lg font-bold text-gray-900 mb-2">${c.title || 'Untitled Case'}</h3>
+                        <p class="text-sm text-gray-600 line-clamp-3 mb-4">${c.issues || 'No issues described.'}</p>
+                        <div class="flex items-center gap-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                            <span class="flex items-center gap-1"><i data-lucide="file-text" class="w-3 h-3"></i> ${c.ruling ? 'Ruling Available' : 'No Ruling'}</span>
+                            <span class="flex items-center gap-1"><i data-lucide="tag" class="w-3 h-3"></i> ${c.status || 'Active'}</span>
+                        </div>
+                    </div>
+                `).join('');
+                lucide.createIcons();
+            }
+        }
+
+        // Event Listeners
+        searchInput.addEventListener('input', render);
+        provisionFilter.addEventListener('change', render);
+        sortOrder.addEventListener('change', render);
+
+        // Initialize Lucide
+        lucide.createIcons();
+    </script>
+</body>
+</html>
